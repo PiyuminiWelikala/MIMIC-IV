@@ -1,0 +1,1919 @@
+---
+title: "EDA-MIMIC_IV-Project7"
+authors: "Team7"
+date: "2024-03-06"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+---
+
+## Introduction
+***"A problem is a chance for you to do your best."*** *Duke Ellington*
+
+In this report we will be looking and handling data about patients that had been admitted to the ICU, with problems related to hearth deceased. The scope of the study is to explore the data, recognize and clean the data in order to obtain a clean input to make a further selection or manipulation in the features that can give us the most information to run a machine learning model in the phase 2.
+
+```{r Importing libraries, include=FALSE}
+# Import libraries
+# install.packages('tidyverse')
+library(dplyr)
+
+# load libraries ggplot2 and ggally for pair wise 
+library(ggplot2)
+
+# install.packages('GGally')
+library(GGally) 
+```
+
+# First look to the dataset
+
+## Importing data
+In this exercise we will use the *MIMIC-IV* data set, this is a publicly available database containing datums about patient measurements, diagnoses, and other classification information.
+```{r Importing data, include=FALSE}
+# Get location
+getwd() 
+
+# Open file with mimic iv name in location keeping headers
+mimic_iv <- read.csv("MIMIC-IV-data-extraced.csv",header = TRUE)
+head(mimic_iv)
+```
+
+## Description of variables
+For this first part, we are going to explore the general characteristics of the dataset.
+
+### How many records do we have? How many variables?
+```{r Dataframe dimensions, echo=FALSE}
+dim_data <- dim(mimic_iv)
+print(knitr::kable(dim_data))
+```
+Comments: For this particular version of the data we have 6377 observations and 207 variables.
+
+### What are the variable names? Are they meaningful?
+```{r Variables names, echo=FALSE}
+name_columns <- names(mimic_iv)
+print(knitr::kable(name_columns))
+```
+Comments: The variables names make mention of demographic classification, measurements on vital signs, lab tests and diagnoses about patient conditions or medical history.
+
+### What type is each variable—e.g., numeric, categorical, discrete, or logical?
+
+```{r Dataframe structure 1, include=FALSE}
+str(mimic_iv)
+```
+
+```{r Summary 1, include=FALSE}
+summary(mimic_iv)
+
+```
+
+```{r Factoring variables, include=FALSE}
+mimic_iv$gender <- as.factor(mimic_iv$gender)
+mimic_iv$mortality <- factor(mimic_iv$mortality, levels = c(0, 1), labels = c("Alive", "Death"))
+mimic_iv$ethnicity <- as.factor(mimic_iv$ethnicity)
+mimic_iv$GCS...Eye.Opening <- as.factor(mimic_iv$GCS...Eye.Opening)
+
+#for (i in 36:206) {
+#  mimic_iv[, i] <- factor(mimic_iv[, i], levels = c(0, 1))
+#}
+
+mimic_iv$Age.Group <- as.factor(mimic_iv$Age.Group)
+```
+Comments:
+
+
+### How many unique values does each variable have?
+```{r Unique values, include=FALSE}
+# Count unique values by column
+unique_counts <- sapply(mimic_iv, function(x) length(unique(x)))
+
+# Print the counts
+print(knitr::kable(unique_counts))
+```
+
+### What value occurs most frequently, and how often does it occur?
+```{r Most frequent values, include=FALSE}
+# Find the most frequent value and its count by column
+most_frequent <- sapply(mimic_iv, function(x) {
+  tab <- table(x)
+  max_val <- names(tab)[which.max(tab)]
+  max_count <- max(tab)
+  return(list(max_val = max_val, max_count = max_count))
+})
+
+# Print the results
+print(knitr::kable(most_frequent))
+```
+
+
+```{r Least frequent values, include=FALSE}
+# Find the least frequent value and its count by column
+least_frequent <- sapply(mimic_iv, function(x) {
+  tab <- table(x)
+  min_val <- names(tab)[which.min(tab)]
+  min_count <- min(tab)
+  return(list(min_val = min_val, min_count = min_count))
+})
+
+# Print the results
+print(least_frequent)
+```
+
+
+### Are there missing observations (vertically and horizontally)? If so, how frequently does this occur?
+```{r Missing values total (hor), echo=FALSE}
+na_count <- sum(is.na(mimic_iv))
+cat("The number of total missing values is:",na_count,"\n")
+
+mortality_percentage0 <- sum(mimic_iv$mortality == "Death")/dim_data[1]
+cat("The percentage of mortality is:",round(mortality_percentage0, 4),"--> In the original dataset.\n")
+```
+
+```{r Missing values vertically, echo=FALSE}
+# Calculate missing value count and percentage for each column
+missing_values <- colSums(is.na(mimic_iv))
+missing_percentage <- (missing_values / nrow(mimic_iv)) * 100
+
+# Create a data frame to store the results
+missing_data <- data.frame(missing_count = missing_values, missing_percentage = missing_percentage)
+
+# Filter to include only columns with missing data
+missing_data_filtered <- missing_data[missing_data$missing_count > 0, ]
+
+# Sort the data frame by missing_percentage in descending order
+missing_data_sorted <- missing_data_filtered[order(-missing_data_filtered$missing_percentage), ]
+
+# Print the results in a table format
+knitr::kable(missing_data_sorted, caption = "Missing Value Summary")
+```
+
+#### Summary of demographic, vital signs and lab tests
+```{r Summary Num Var, echo=FALSE}
+
+summary(mimic_iv[,1:35])
+```
+
+# Graphical Review
+
+## Outliers exploration
+
+```{r Subsets, echo=FALSE}
+# Numerical variables
+mimic_num <- mimic_iv[,1:35]
+mimic_num <- subset(mimic_num, select = -c(subject_id,mortality,gender,ethnicity,GCS...Eye.Opening))
+
+# Categorical variables
+mimic_cat <- mimic_iv[,c(2,4,5,31,36:207)]
+```
+
+
+```{r Scatter and Box plots, echo=FALSE}
+for (col in names(mimic_num)) {
+  
+  col_data <- mimic_num[[col]]
+  
+  par(mfrow = c(1, 2))
+  
+  plot(1:length(col_data), col_data,
+       type = "p",
+       main = paste("Scatterplot of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "blue",
+       xlim = c(0, length(col_data) + 1),
+       ylim = c(min(col_data, na.rm = TRUE), max(col_data, na.rm = TRUE)),
+       cex = 0.5)
+  
+  # Calculate rounded limits
+  x_min <- floor(min(col_data, na.rm = TRUE))
+  x_max <- ceiling(max(col_data, na.rm = TRUE) * 1.2)
+  y_max <- ceiling(max(hist(col_data, plot = FALSE)$counts) * 1.2)
+  
+  # Create histogram and adjust axis
+  hist(col_data, 
+       main = paste("Histogram of", col), 
+       xlab = col,
+       xlim = c(x_min, x_max),       # Rounded x-axis limits
+       ylim = c(0, y_max),  # Rounded y-axis limits
+       col = "gray")
+  
+  # Add vertical lines for mean and median
+  med <- mean(col_data, na.rm = TRUE)
+  abline(v = med, col = 'blue')
+  mdn <- median(col_data, na.rm = TRUE)
+  abline(v = mdn, col = 'red')
+  
+}
+```
+
+
+## Distributions assessment
+
+### Histograms and QQ Plots for Numerical variables
+
+```{r Histograms and QQ plots, echo=FALSE}
+# Loop through each variable
+for (var in names(mimic_num)) {
+  # Set up the plotting area
+  par(mfrow = c(1, 2))
+  
+  # Plot a histogram for the current variable
+  hist(mimic_num[[var]], freq = FALSE, main = paste("Histogram of", var), xlab = "Value", ylab = "Density", breaks = 30)
+  
+  # Add a normal distribution curve
+  curve(dnorm(x, mean = mean(mimic_num[[var]], na.rm = TRUE), sd = sd(mimic_num[[var]], na.rm = TRUE)), 
+        add = TRUE, col = "red")
+  
+  # Create a Q-Q plot for the current variable
+  qqnorm(mimic_num[[var]], main = paste("Q-Q Plot of", var))
+  qqline(mimic_num[[var]], col = "red")
+}
+```
+Comments:
+
+### Bar plots for Categorical variables
+
+```{r Bar plots cat var, echo=FALSE}
+# Get the number of columns in the dataset
+num_cols <- length(names(mimic_cat))
+
+# Set up the plotting area
+par(mfrow = c(1, 2))  # Set up for two plots per row
+
+# Iterate over each column
+for (i in 1:num_cols) {
+  # Get the column name
+  col <- names(mimic_cat)[i]
+  
+  # Access the column data using mimic_cat[[col]]
+  col_data <- mimic_cat[[col]]
+  
+  # Summarize the data (counting occurrences of each unique value)
+  summary_data <- table(col_data)
+  
+  # Create a bar plot for the current column
+  barplot(summary_data,
+          main = paste("Barplot of", col),
+          xlab = col,
+          ylab = "Frequency",
+          col = "blue")
+  
+  # Extract names of the summary_data object
+  summary_names <- names(summary_data)
+  
+  # Add frequency numbers above each bar
+  text(x = 1:length(summary_data), 
+       y = summary_data + 0.5,  # Adjust the vertical position of the text
+       labels = summary_data,
+       pos = 3,  # Position the text above each bar
+       cex = 0.8)  # Adjust the size of the text
+  
+  # If the number of columns is odd, and this is the last column, reset the plotting area
+  if (num_cols %% 2 != 0 && i == num_cols) {
+    par(mfrow = c(1, 1))  # Reset the plotting area to one plot per row
+  }
+}
+
+```
+Comments:
+
+
+
+# Variables Relationship Review
+
+## Correlation for Numerical variables
+```{r Numerical correlation, echo=FALSE}
+# Compute correlation matrix
+correlation_matrix <- cor(mimic_num, use = "pairwise.complete.obs")
+
+write.csv(correlation_matrix,"pearson_correlation.csv", row.names = T)
+```
+Comments: In this part we should go deeper on the variables that have higher correlation, doing paired scatter plot and cor.test
+
+## Correlation for Categorical variables
+
+### Mortality vs Gender
+```{r echo=FALSE}
+X <- mimic_cat$gender
+Y <- mimic_cat$mortality
+
+X1 <- 'gender'
+Y1 <- 'mortality'
+
+# Change name of colum
+
+print(paste("Chi-Square correlation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+```
+
+### Mortality vs Ethnicity
+```{r echo=FALSE}
+
+X <- mimic_cat$ethnicity
+Y <- mimic_cat$mortality
+
+X1 <- 'ethnicity'
+Y1 <- 'mortality'
+
+print(paste("Chi-Squqre correkation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+
+```
+
+### Mortality vs GCS Eye Opening
+```{r echo=FALSE}
+X <- mimic_cat$GCS...Eye.Opening
+Y <- mimic_cat$mortality
+
+X1 <- 'GCS...Eye.Opening'
+Y1 <- 'mortality'
+
+
+
+print(paste("Chi-Squqre correkation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+
+```
+
+### Mortality vs Age Group
+```{r echo=FALSE}
+X <- mimic_cat$Age.Group
+Y <- mimic_cat$mortality
+
+X1 <- 'Age.Group'
+Y1 <- 'mortality'
+
+print(paste("Chi-Squqre correkation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+
+``` 
+
+### Gender vs Ethnicity
+```{r echo=FALSE}
+X <- mimic_cat$ethnicity
+Y <- mimic_cat$gender
+
+X1 <- 'ethnicity'
+Y1 <- 'gender'
+
+print(paste("Chi-Squqre correkation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+
+
+
+
+```
+
+### Gender vs GCS Eye Opening
+```{r echo=FALSE}
+X <- mimic_cat$GCS...Eye.Opening
+Y <- mimic_cat$gender
+
+X1 <- 'GCS...Eye.Opening'
+Y1 <- 'gender'
+
+print(paste("Chi-Squqre correkation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+
+```
+
+### Gender vs Age Group
+```{r echo=FALSE}
+X <- mimic_cat$Age.Group
+Y <- mimic_cat$gender
+
+X1 <- 'Age.Group'
+Y1 <- 'gender'
+
+print(paste("Chi-Squqre correkation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+
+```
+
+### GCS Eye Opening vs Ethnicity
+```{r echo=FALSE}
+X <- mimic_cat$ethnicity
+Y <- mimic_cat$GCS...Eye.Opening
+
+X1 <- 'ethnicity'
+Y1 <- 'GCS...Eye.Opening'
+
+print(paste("Chi-Squqre correkation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+
+```
+
+### Age Group vs Ethnicity
+```{r echo=FALSE}
+X <- mimic_cat$ethnicity
+Y <- mimic_cat$Age.Group
+
+X1 <- 'ethnicity'
+Y1 <- 'Age.Group'
+
+print(paste("Chi-Squqre correkation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+
+```
+
+### Age Group vs GCS Eye Opening
+```{r echo=FALSE}
+X <- mimic_cat$GCS...Eye.Opening
+Y <- mimic_cat$Age.Group
+
+X1 <- 'ethnicity'
+Y1 <- 'Age.Group'
+
+print(paste("Chi-Squqre correkation for ",X1," vs ",Y1))
+ 
+# Create a data frame from the main data set.
+stu_data = data.frame(X,Y)
+ 
+# Create a contingency table with the needed variables.           
+stu_data = table(X,Y) 
+                 
+print(stu_data)
+
+# applying chisq.test() function
+print(chisq.test(stu_data))
+
+```
+
+# Cleaning Dataset
+
+## Removing extreme Out-of-range values
+
+In this part we will be taking a careful look to the ranges and limits for each variable, we will group them by the nature of the variables and their clinical significance.
+
+### ID Group
+```{r Summary ID group, echo=FALSE}
+# Summary of Identification Group
+summary(mimic_iv[,1:5])
+```
+Comments:
+In this identification part, it seems to be good and clean, it will serve further to split the data and make other kind of analysis.
+
+### Vital Signs Group
+
+#### Heart Rate Group
+```{r Summary heart rate group, echo=FALSE}
+# Summary of Heart Rate Group
+summary(mimic_iv[,6:8])
+```
+
+Now, we'll be checking the number of values out-of-range among Heart Rate
+```{r Out-range heart rate group, echo=FALSE}
+# Set the maximum heart rate threshold
+max_heart_rate <- 250
+
+print("Out-of-range values Heart Rate Group")
+cat("Heart Rate: ", oor_hr <- sum(mimic_iv$Heart.Rate > max_heart_rate, na.rm = TRUE), "\n")
+cat("Heart Rate Alarm High: ", oor_hrah <- sum(mimic_iv$Heart.rate.Alarm...High > max_heart_rate, na.rm = TRUE), "\n")
+cat("Heart Rate Alarm Low: ", oor_hral <- sum(mimic_iv$Heart.Rate.Alarm...Low > max_heart_rate, na.rm = TRUE), "\n")
+```
+
+In this part, we will erase all values above the normal heart rate.
+```{r Removing out-range heart rate group, echo=FALSE}
+# Remove out-of-range values
+mimic_iv_clean1 <- mimic_iv
+mimic_iv_clean1$Heart.Rate[mimic_iv_clean1$Heart.Rate > max_heart_rate] <- NA
+mimic_iv_clean1$Heart.rate.Alarm...High[mimic_iv_clean1$Heart.rate.Alarm...High > max_heart_rate] <- NA
+mimic_iv_clean1$Heart.Rate.Alarm...Low[mimic_iv_clean1$Heart.Rate.Alarm...Low > max_heart_rate] <- NA
+
+# Summary of cleaned Heart Rate Group
+cat("Summary of cleaned Heart Rate Group\n")
+summary(mimic_iv_clean1[,6:8])
+
+for (col in names(mimic_iv[6:8])) {
+  
+  col_data_raw <- mimic_iv[[col]]
+  col_data_clean1 <- mimic_iv_clean1[[col]]
+  
+  par(mfrow = c(1, 2))
+  
+  plot(1:length(col_data_raw), col_data_raw,
+       type = "p",
+       main = paste("Before of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "red",
+       xlim = c(0, length(col_data_raw) + 1),
+       ylim = c(min(col_data_raw, na.rm = TRUE), max(col_data_raw, na.rm = TRUE)),
+       cex = 0.5)
+  
+  plot(1:length(col_data_clean1), col_data_clean1,
+       type = "p",
+       main = paste("After of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "green",
+       xlim = c(0, length(col_data_clean1) + 1),
+       ylim = c(min(col_data_clean1, na.rm = TRUE), max(col_data_clean1, na.rm = TRUE)),
+       cex = 0.5)
+}
+```
+Comments:
+
+
+References:
+https://www.heart.org/en/healthy-living/fitness/fitness-basics/target-heart-rates
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6220689/
+
+
+#### Blood Pressure Group
+```{r Summary blood pressure group, echo=FALSE}
+# Summary of Blood Pressure Group
+summary(mimic_iv_clean1[,9:12])
+```
+
+Now, we'll be checking the number of values out-of-range among Blood Pressure
+```{r Out-range blood pressure group, echo=FALSE}
+print("Out-of-range values Blood Pressure Group")
+cat("Arterial BP syst: ", oor_abps <- sum(!is.na(mimic_iv_clean1$Arterial.Blood.Pressure.systolic) & mimic_iv_clean1$Arterial.Blood.Pressure.systolic > 400), "\n")
+cat("Non Inv BP syst: ", oor_nibps <- sum(!is.na(mimic_iv_clean1$Non.Invasive.Blood.Pressure.systolic) & mimic_iv_clean1$Non.Invasive.Blood.Pressure.systolic > 360), "\n")
+cat("Arterial BP dias: ", oor_abpd <- sum(!is.na(mimic_iv_clean1$Arterial.Blood.Pressure.diastolic) & mimic_iv_clean1$Arterial.Blood.Pressure.diastolic > 267), "\n")
+cat("Non Inv BP dias: ", oor_nibpd <- sum(!is.na(mimic_iv_clean1$Non.Invasive.Blood.Pressure.diastolic) & mimic_iv_clean1$Non.Invasive.Blood.Pressure.diastolic > 240), "\n")
+
+```
+Comments: The limits for each variable were taken graphically analyzing the scatter plot, we use extreme values to keep the outliers that could potentially contain valuable information about patient condition.
+
+
+```{r Removing out-range blood pressure group, echo=FALSE}
+# Set the maximum blood pressure thresholds
+max_abps <- 400
+max_nibps <- 360
+max_abpd <- 267
+max_nibpd <- 240
+
+# Remove out-of-range values
+mimic_iv_clean1$Arterial.Blood.Pressure.systolic[mimic_iv_clean1$Arterial.Blood.Pressure.systolic > max_abps] <- NA
+mimic_iv_clean1$Non.Invasive.Blood.Pressure.systolic[mimic_iv_clean1$Non.Invasive.Blood.Pressure.systolic > max_nibps] <- NA
+mimic_iv_clean1$Arterial.Blood.Pressure.diastolic[mimic_iv_clean1$Arterial.Blood.Pressure.diastolic > max_abpd] <- NA
+mimic_iv_clean1$Non.Invasive.Blood.Pressure.diastolic[mimic_iv_clean1$Non.Invasive.Blood.Pressure.diastolic > max_nibpd] <- NA
+
+# Summary of cleaned Blood Pressure Group
+cat("Summary of cleaned Blood Pressure Group\n")
+summary(mimic_iv_clean1[,9:12])
+
+for (col in names(mimic_iv[9:12])) {
+  
+  col_data_raw <- mimic_iv[[col]]
+  col_data_clean1 <- mimic_iv_clean1[[col]]
+  
+  par(mfrow = c(1, 2))
+  
+  plot(1:length(col_data_raw), col_data_raw,
+       type = "p",
+       main = paste("Before of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "red",
+       xlim = c(0, length(col_data_raw) + 1),
+       ylim = c(min(col_data_raw, na.rm = TRUE), max(col_data_raw, na.rm = TRUE)),
+       cex = 0.5)
+  
+  plot(1:length(col_data_clean1), col_data_clean1,
+       type = "p",
+       main = paste("After of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "green",
+       xlim = c(0, length(col_data_clean1) + 1),
+       ylim = c(min(col_data_clean1, na.rm = TRUE), max(col_data_clean1, na.rm = TRUE)),
+       cex = 0.5)
+}
+
+```
+References:
+https://www.nursingcenter.com/ncblog/may-2022/non-invasive-blood-pressure#:~:text=Normal%20blood%20pressure%20is%20considered,can%20lead%20to%20inaccurate%20readings.
+
+
+#### Respiratory Rate Group
+```{r Summary respiratory rate group, echo=FALSE}
+# Summary of Respiratory Rate Group
+summary(mimic_iv_clean1[,13:17])
+```
+
+Now, we'll be checking the number of values out-of-range among Respiratory Rate
+```{r Out-range respiration group, echo=FALSE}
+# Set the maximum thresholds for Respiratory Rate and SpO2 Desat Limit
+max_respiratory_rate <- 120 # increased value to keep the most outliers
+max_so2_desat_limit <- 100
+
+# Print out-of-range values for Respiration Group
+print("Out-of-range values Respiration Group")
+cat("Respiratory rate: ", oor_rr <- sum(mimic_iv_clean1$Respiratory.Rate > max_respiratory_rate, na.rm = TRUE), "\n")
+cat("Respiratory Rate (Set): ", oor_rr_set <- sum(mimic_iv_clean1$Respiratory.Rate..Set. > max_respiratory_rate, na.rm = TRUE), "\n")
+cat("Respiratory Rate (spontaneous): ", oor_rr_spont <- sum(mimic_iv_clean1$Respiratory.Rate..spontaneous. > max_respiratory_rate, na.rm = TRUE), "\n")
+cat("Respiratory Rate (Total): ", oor_rr_total <- sum(mimic_iv_clean1$Respiratory.Rate..Total. > max_respiratory_rate, na.rm = TRUE), "\n")
+cat("SpO2 Desat Limit: ", oor_so2dl <- sum(mimic_iv_clean1$SpO2.Desat.Limit > max_so2_desat_limit, na.rm = TRUE), "\n")
+```
+Comments:
+- A respiratory rate of 120 breaths per minute (bpm) would be extremely high and generally not sustainable for an extended period in a resting adult. Such a high respiratory rate would likely indicate severe respiratory distress, significant metabolic demand, or a medical emergency. While it's theoretically possible for a person to briefly reach such a high respiratory rate, it would be highly abnormal and would warrant immediate medical attention. ***by ChatGPT***
+
+- For the SpO2 Desat Limit, we set the limit in 100, this make reference to a oxygen saturation of the 100%.
+
+```{r Removing out-range respiration group, echo=FALSE}
+# Replace out-of-range values with NA
+mimic_iv_clean1$Respiratory.Rate[mimic_iv_clean1$Respiratory.Rate > max_respiratory_rate] <- NA
+mimic_iv_clean1$Respiratory.Rate..Set.[mimic_iv_clean1$Respiratory.Rate..Set. > max_respiratory_rate] <- NA
+mimic_iv_clean1$Respiratory.Rate..spontaneous.[mimic_iv_clean1$Respiratory.Rate..spontaneous. > max_respiratory_rate] <- NA
+mimic_iv_clean1$Respiratory.Rate..Total.[mimic_iv_clean1$Respiratory.Rate..Total. > max_respiratory_rate] <- NA
+mimic_iv_clean1$SpO2.Desat.Limit[mimic_iv_clean1$SpO2.Desat.Limit > max_so2_desat_limit] <- NA
+
+# Summary of cleaned Respiration Group
+cat("Summary of cleaned Respiration Group\n")
+summary(mimic_iv_clean1[,13:17])
+
+for (col in names(mimic_iv[13:17])) {
+  
+  col_data_raw <- mimic_iv[[col]]
+  col_data_clean1 <- mimic_iv_clean1[[col]]
+  
+  par(mfrow = c(1, 2))
+  
+  plot(1:length(col_data_raw), col_data_raw,
+       type = "p",
+       main = paste("Before of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "red",
+       xlim = c(0, length(col_data_raw) + 1),
+       ylim = c(min(col_data_raw, na.rm = TRUE), max(col_data_raw, na.rm = TRUE)),
+       cex = 0.5)
+  
+  plot(1:length(col_data_clean1), col_data_clean1,
+       type = "p",
+       main = paste("After of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "green",
+       xlim = c(0, length(col_data_clean1) + 1),
+       ylim = c(min(col_data_clean1, na.rm = TRUE), max(col_data_clean1, na.rm = TRUE)),
+       cex = 0.5)
+}
+```
+
+References:
+https://www.whoop.com/us/en/thelocker/what-causes-an-increased-respiratory-rate/
+
+
+### Blood Chemistry
+
+#### Blood Clotting Group
+```{r Summary blood clotting group, echo=FALSE}
+# Summary of Blood Clotting Group
+summary(mimic_iv_clean1[,18:19])
+```
+
+Now, we'll be checking the number of values out-of-range among Blood Clotting
+```{r Out-range blood clotting group, echo=FALSE}
+# Set the maximum thresholds for Blood Clotting variables
+error <- 999999
+max_inr <- 3
+max_prothrombin_time <- 20.6
+
+# Print out-of-range values for Blood Clotting Group
+print("Out-of-range values Blood Clotting Group")
+cat("Error Value (999999) INR PT: ", oor_inrpt <- sum(mimic_iv_clean1[,18:19] == error, na.rm = TRUE), "\n")
+cat("INR: ", oor_inr <- sum(mimic_iv_clean1$INR > max_inr, na.rm = TRUE), "\n")
+cat("Prothrombin time: ", oor_pt <- sum(mimic_iv_clean1$Prothrombin.time > max_prothrombin_time, na.rm = TRUE), "\n")
+```
+Comments:
+- For both variables we found a strange value '999999', this values maybe is due a misreading or malfunction of the device, later on we can decide what to do with it.
+- For the INR I used a value found in the reference as maximum range, however, that values is for patient in certain treatment, we should research a little bit more if we found some other references.
+- For the Prothrombin time, didn't found valuable resources or values, I let the 3rd quartile as reference just to see the outcome.
+
+```{r Removing out-range blood clotting group, echo=FALSE}
+# Replace out-of-range values with NA
+mimic_iv_clean1$INR[mimic_iv_clean1$INR == error] <- NA
+mimic_iv_clean1$Prothrombin.time[mimic_iv_clean1$Prothrombin.time == error] <- NA
+
+summary(mimic_iv_clean1[,18:19])
+
+for (col in names(mimic_iv[18:19])) {
+  
+  col_data_raw <- mimic_iv[[col]]
+  col_data_clean1 <- mimic_iv_clean1[[col]]
+  
+  par(mfrow = c(1, 2))
+  
+  plot(1:length(col_data_raw), col_data_raw,
+       type = "p",
+       main = paste("Before of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "red",
+       xlim = c(0, length(col_data_raw) + 1),
+       ylim = c(min(col_data_raw, na.rm = TRUE), max(col_data_raw, na.rm = TRUE)),
+       cex = 0.5)
+  
+  plot(1:length(col_data_clean1), col_data_clean1,
+       type = "p",
+       main = paste("After of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "green",
+       xlim = c(0, length(col_data_clean1) + 1),
+       ylim = c(min(col_data_clean1, na.rm = TRUE), max(col_data_clean1, na.rm = TRUE)),
+       cex = 0.5)
+}
+```
+Comments:
+
+Reference:
+https://www.mayoclinic.org/tests-procedures/prothrombin-time/about/pac-20384661#:~:text=The%20average%20time%20range%20for,clots%20more%20quickly%20than%20normal.
+
+
+### Electrolytes and Acid-Base Balance Group
+```{r Summary electrolytes group, echo=FALSE}
+# Summary of Electrolytes and Acid-Base Balance Group
+summary(mimic_iv_clean1[,c(20,23:29)])
+```
+
+Now, we'll be checking the number of values out-of-range among "x1"
+```{r Out-range electrolytes group, echo=FALSE}
+print("Out-of-range values Electrolytes and Acid-Base Balance Group")
+
+for (col in names(mimic_iv[c(20,23:29)])) {
+  cat("Error Value (999999) in:", col, "=", qerror <- sum(mimic_iv_clean1[[col]] == error, na.rm = TRUE), "\n")
+}
+```
+Comments:
+
+
+```{r Removing out-range electrolytes group, echo=FALSE}
+for (col in names(mimic_iv[c(20,23:29)])) {
+  mimic_iv_clean1[[col]] [mimic_iv_clean1[[col]] == error] <- NA
+}
+
+summary(mimic_iv_clean1[,c(20,23:29)])
+
+for (col in names(mimic_iv[c(20,23:29)])) {
+  
+  col_data_raw <- mimic_iv[[col]]
+  col_data_clean1 <- mimic_iv_clean1[[col]]
+  
+  par(mfrow = c(1, 2))
+  
+  plot(1:length(col_data_raw), col_data_raw,
+       type = "p",
+       main = paste("Before of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "red",
+       xlim = c(0, length(col_data_raw) + 1),
+       ylim = c(min(col_data_raw, na.rm = TRUE), max(col_data_raw, na.rm = TRUE)),
+       cex = 0.5)
+  
+  plot(1:length(col_data_clean1), col_data_clean1,
+       type = "p",
+       main = paste("After of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "green",
+       xlim = c(0, length(col_data_clean1) + 1),
+       ylim = c(min(col_data_clean1, na.rm = TRUE), max(col_data_clean1, na.rm = TRUE)),
+       cex = 0.5)
+}
+```
+
+
+```{r Out-range electrolytes group continuation, echo=FALSE}
+# Set the thresholds for Electrolytes and Acid-Base Balance variables
+max_anion_gap <- 100
+max_potassium_whole_blood <- 50
+min_chloride_whole_blood <- 50
+
+# Print out-of-range values for Electrolytes and Acid-Base Balance Group
+print("Out-of-range values Electrolytes and Acid-Base Balance Group")
+cat("Anion Gap: ", oor_anion_gap <- sum(mimic_iv_clean1$Anion.gap > max_anion_gap, na.rm = TRUE), "\n")
+cat("Potassium (Whole Blood 1): ", oor_potassium_whole_blood_1 <- sum(mimic_iv_clean1$Potassium..Whole.Blood.2 > max_potassium_whole_blood, na.rm = TRUE), "\n")
+cat("Potassium (Whole Blood 2): ", oor_potassium_whole_blood_2 <- sum(mimic_iv_clean1$Potassium..whole.blood. > max_potassium_whole_blood, na.rm = TRUE), "\n")
+cat("Chloride (Whole Blood 2): ", oor_chloride_whole_blood_2 <- sum(mimic_iv_clean1$Chloride..whole.blood. < min_chloride_whole_blood, na.rm = TRUE), "\n")
+
+```
+Comments:
+
+```{r Removing out-range electrolytes group continuation, echo=FALSE}
+# Replace out-of-range values with NA
+mimic_iv_clean1$Anion.gap[mimic_iv_clean1$Anion.gap > max_anion_gap] <- NA
+mimic_iv_clean1$Potassium..Whole.Blood.2[mimic_iv_clean1$Potassium..Whole.Blood.2 > max_potassium_whole_blood] <- NA
+mimic_iv_clean1$Potassium..whole.blood.[mimic_iv_clean1$Potassium..whole.blood. > max_potassium_whole_blood] <- NA
+mimic_iv_clean1$Chloride..Whole.Blood[mimic_iv_clean1$Chloride..Whole.Blood < min_chloride_whole_blood] <- NA
+mimic_iv_clean1$Chloride..whole.blood.[mimic_iv_clean1$Chloride..whole.blood. < min_chloride_whole_blood] <- NA
+
+summary(mimic_iv_clean1[,c(20,23:29)])
+
+for (col in names(mimic_iv[c(20,23:29)])) {
+  
+  col_data_raw <- mimic_iv[[col]]
+  col_data_clean1 <- mimic_iv_clean1[[col]]
+  
+  par(mfrow = c(1, 2))
+  
+  plot(1:length(col_data_raw), col_data_raw,
+       type = "p",
+       main = paste("Before of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "red",
+       xlim = c(0, length(col_data_raw) + 1),
+       ylim = c(min(col_data_raw, na.rm = TRUE), max(col_data_raw, na.rm = TRUE)),
+       cex = 0.5)
+  
+  plot(1:length(col_data_clean1), col_data_clean1,
+       type = "p",
+       main = paste("After of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "green",
+       xlim = c(0, length(col_data_clean1) + 1),
+       ylim = c(min(col_data_clean1, na.rm = TRUE), max(col_data_clean1, na.rm = TRUE)),
+       cex = 0.5)
+}
+```
+Comments:
+
+
+
+#### Metabolic Parameters
+```{r echo=FALSE}
+# Summary of Metabolic Parameters Group
+summary(mimic_iv_clean1[,c(21:22,30)])
+```
+
+```{r echo=FALSE}
+# Set the thresholds for Creatinine (serum), Glucose (Whole Blood), and Temperature variables
+max_creatinine_serum <- 40
+max_glucose_whole_blood <- 3000
+
+# Print out-of-range values for specified variables
+print("Out-of-range values for Creatinine (serum), Glucose (Whole Blood), and Temperature")
+cat("Error Value (999999) Creatinine Serum: ", error_cs <- sum(mimic_iv_clean1$Creatinine..serum. == error, na.rm = TRUE), "\n")
+cat("Creatinine (serum): ", oor_creatinine_serum <- sum(mimic_iv_clean1$Creatinine..serum. > max_creatinine_serum, na.rm = TRUE), "\n")
+cat("Glucose (Whole Blood): ", oor_glucose_whole_blood <- sum(mimic_iv_clean1$Glucose..whole.blood. > max_glucose_whole_blood, na.rm = TRUE), "\n")
+
+```
+
+```{r echo=FALSE}
+# Replace out-of-range values with NA
+mimic_iv_clean1$Creatinine..serum.[mimic_iv_clean1$Creatinine..serum. > max_creatinine_serum | mimic_iv_clean1$Creatinine..serum. == error] <- NA
+mimic_iv_clean1$Glucose..whole.blood.[mimic_iv_clean1$Glucose..whole.blood. > max_glucose_whole_blood] <- NA
+
+summary(mimic_iv_clean1[,c(21:22,30)])
+
+for (col in names(mimic_iv[c(21:22,30)])) {
+  
+  col_data_raw <- mimic_iv[[col]]
+  col_data_clean1 <- mimic_iv_clean1[[col]]
+  
+  par(mfrow = c(1, 2))
+  
+  plot(1:length(col_data_raw), col_data_raw,
+       type = "p",
+       main = paste("Before of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "red",
+       xlim = c(0, length(col_data_raw) + 1),
+       ylim = c(min(col_data_raw, na.rm = TRUE), max(col_data_raw, na.rm = TRUE)),
+       cex = 0.5)
+  
+  plot(1:length(col_data_clean1), col_data_clean1,
+       type = "p",
+       main = paste("After of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "green",
+       xlim = c(0, length(col_data_clean1) + 1),
+       ylim = c(min(col_data_clean1, na.rm = TRUE), max(col_data_clean1, na.rm = TRUE)),
+       cex = 0.5)
+}
+```
+Comments:
+
+
+### Hematology Group
+```{r echo=FALSE}
+# Summary of Metabolic Parameters Group
+summary(mimic_iv_clean1[,32:35])
+```
+
+```{r echo=FALSE}
+# Set the thresholds for Hemoglobin, Hemoglobin.2, Hematocrit, and Platelet.Count variables
+max_hemoglobin <- 40
+max_platelet_count <- 1350 # 3 times the highest average, this criteria could be erased 
+
+# Print out-of-range values for specified variables
+print("Out-of-range values for Hemoglobin, Hemoglobin.2, Hematocrit, and Platelet.Count")
+cat("Hemoglobin: ", oor_hemoglobin <- sum(mimic_iv_clean1$Hemoglobin > max_hemoglobin, na.rm = TRUE), "\n")
+cat("Platelet Count: ", oor_platelet_count <- sum(mimic_iv_clean1$Platelet.Count > max_platelet_count, na.rm = TRUE), "\n")
+```
+
+```{r echo=FALSE}
+# Replace out-of-range values with NA
+mimic_iv_clean1$Hemoglobin[mimic_iv_clean1$Hemoglobin > max_hemoglobin] <- NA
+mimic_iv_clean1$Platelet.Count[mimic_iv_clean1$Platelet.Count > max_platelet_count] <- NA
+
+# Summary of cleaned variables
+cat("Summary of cleaned variables\n")
+summary(mimic_iv_clean1[,32:35])
+
+for (col in names(mimic_iv[32:35])) {
+  
+  col_data_raw <- mimic_iv[[col]]
+  col_data_clean1 <- mimic_iv_clean1[[col]]
+  
+  par(mfrow = c(1, 2))
+  
+  plot(1:length(col_data_raw), col_data_raw,
+       type = "p",
+       main = paste("Before of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "red",
+       xlim = c(0, length(col_data_raw) + 1),
+       ylim = c(min(col_data_raw, na.rm = TRUE), max(col_data_raw, na.rm = TRUE)),
+       cex = 0.5)
+  
+  plot(1:length(col_data_clean1), col_data_clean1,
+       type = "p",
+       main = paste("After of", col),
+       xlab = "Index",
+       ylab = col,
+       pch = 16,
+       col = "green",
+       xlim = c(0, length(col_data_clean1) + 1),
+       ylim = c(min(col_data_clean1, na.rm = TRUE), max(col_data_clean1, na.rm = TRUE)),
+       cex = 0.5)
+}
+```
+Comments:
+
+
+References:
+https://www.nhlbi.nih.gov/health/thrombocytopenia#:~:text=A%20normal%20platelet%20count%20in,microliter%20is%20lower%20than%20normal.
+
+
+## Checking missing observations again
+```{r Missing values total check, echo=FALSE}
+na_count_c1 <- sum(is.na(mimic_iv_clean1))
+cat("The number of total missing values after ranges cleaning is:",na_count_c1,"\n")
+
+
+mortality_percentage1 <- sum(mimic_iv_clean1$mortality == "Death")/dim_data[1]
+cat("The percentage of mortality is:",round(mortality_percentage1, 4),"--> In the dataset with ranges cleaned.\n")
+```
+
+## Correlation for Numerical variables after ranges cleaned
+```{r Numerical correlation after cleaning, echo=FALSE}
+# Numerical variables
+mimic_num_c1 <- mimic_iv_clean1[,1:35]
+mimic_num_c1 <- subset(mimic_num_c1, select = -c(subject_id,mortality,gender,ethnicity,GCS...Eye.Opening))
+
+# Compute correlation matrix
+correlation_matrix1 <- cor(mimic_num_c1, use = "pairwise.complete.obs")
+
+write.csv(correlation_matrix1,"pearson_correlation_rangesCleaned.csv", row.names = T)
+
+```
+
+## Binary variable aggregation
+
+```{r Combine binary values adding conditions per group, echo=FALSE}
+# Duplicate data set to have a new one with calculations
+data <- mimic_iv_clean1
+
+# Summary of Myocardial Infarction varaibles in 1 column
+
+data <- data %>%
+  mutate(Myocardial = Acute.myocardial.infarction.of.anterolateral.wall..episode.of.c + Acute.myocardial.infarction.of.anterolateral.wall..episode.of.c +   Acute.myocardial.infarction.of.anterolateral.wall..initial.epis +
+Acute.myocardial.infarction.of.anterolateral.wall..subsequent.e +
+Acute.myocardial.infarction.of.other.anterior.wall..episode.of. +  
+Acute.myocardial.infarction.of.other.anterior.wall..initial.epi +
+Acute.myocardial.infarction.of.other.anterior.wall..subsequent. +
+Acute.myocardial.infarction.of.inferolateral.wall..episode.of.c +
+Acute.myocardial.infarction.of.inferolateral.wall..initial.epis +  
+Acute.myocardial.infarction.of.inferolateral.wall..subsequent.e +
+Acute.myocardial.infarction.of.inferoposterior.wall..episode.of +  
+Acute.myocardial.infarction.of.inferoposterior.wall..initial.ep +  
+Acute.myocardial.infarction.of.inferoposterior.wall..subsequent +
+Acute.myocardial.infarction.of.other.inferior.wall..episode.of. +  
+Acute.myocardial.infarction.of.other.inferior.wall..initial.epi +
+Acute.myocardial.infarction.of.other.inferior.wall..subsequent. +  
+Acute.myocardial.infarction.of.other.lateral.wall..episode.of.c +  
+Acute.myocardial.infarction.of.other.lateral.wall..initial.epis +  
+Acute.myocardial.infarction.of.other.lateral.wall..subsequent.e +  
+Acute.myocardial.infarction.of.other.specified.sites..episode.o +  
+Acute.myocardial.infarction.of.other.specified.sites..initial.e +  
+Acute.myocardial.infarction.of.other.specified.sites..subsequen +  
+Acute.myocardial.infarction.of.unspecified.site..episode.of.car +
+Acute.myocardial.infarction.of.unspecified.site..initial.episod +  
+Acute.myocardial.infarction.of.unspecified.site..subsequent.epi +
+Postmyocardial.infarction.syndrome +                               
+Acute.coronary.occlusion.without.myocardial.infarction +
+Old.myocardial.infarction +
+Certain.sequelae.of.myocardial.infarction..not.elsewhere.classi +  
+Acute.myocardial.infarction +                                      
+ST.elevation..STEMI..myocardial.infarction.of.anterior.wall +      
+ST.elevation..STEMI..myocardial.infarction.involving.left.main +  
+ST.elevation..STEMI..myocardial.infarction.involving.left.anter +  
+ST.elevation..STEMI..myocardial.infarction.involving.other.coro +  
+ST.elevation..STEMI..myocardial.infarction.of.inferior.wall +      
+ST.elevation..STEMI..myocardial.infarction.involving.right.coro +  
+ST.elevation..STEMI..myocardial.infarction.involving.other.coro.2 +
+ST.elevation..STEMI..myocardial.infarction.of.other.sites +        
+ST.elevation..STEMI..myocardial.infarction.involving.left.circu +  
+ST.elevation..STEMI..myocardial.infarction.involving.other.site +  
+ST.elevation..STEMI..myocardial.infarction.of.unspecified.site +   
+Non.ST.elevation..NSTEMI..myocardial.infarction +                  
+Acute.myocardial.infarction..unspecified +                         
+Other.type.of.myocardial.infarction +                              
+Myocardial.infarction.type.2 +                                     
+Other.myocardial.infarction.type +                                 
+Subsequent.ST.elevation..STEMI..and.non.ST.elevation..NSTEMI..m +  
+Subsequent.ST.elevation..STEMI..myocardial.infarction.of.anteri +  
+Subsequent.ST.elevation..STEMI..myocardial.infarction.of.inferi +  
+Subsequent.non.ST.elevation..NSTEMI..myocardial.infarction +       
+Subsequent.ST.elevation..STEMI..myocardial.infarction.of.other +   
+Subsequent.ST.elevation..STEMI..myocardial.infarction.of.unspec +  
+Certain.current.complications.following.ST.elevation..STEMI..an +  
+Hemopericardium.as.current.complication.following.acute.myocard +  
+Atrial.septal.defect.as.current.complication.following.acute.my +
+Other.current.complications.following.acute.myocardial.infarcti +
+Old.myocardial.infarction.2
+)
+
+# Summary of Rupture
+
+data <- data %>%
+  mutate(Rupture = Ventricular.septal.defect.as.current.complication.following.acu
+         + Rupture.of.cardiac.wall.without.hemopericardium.as.current.comp
+         + Rupture.of.chordae.tendineae.as.current.complication.following
+         + Rupture.of.papillary.muscle.as.current.complication.following.a
+         ) 
+
+# Summary of Thrombosis
+
+data <- data %>%
+  mutate(Thrombosis = Thrombosis.of.atrium..auricular.appendage..and.ventricle.as.cur
+         + Acute.coronary.thrombosis.not.resulting.in.myocardial.infarctio
+         ) 
+
+# Summary of Systolic
+
+data <- data %>%
+  mutate(Systolic = Rheumatic.heart.failure..congestive.
+          + Congestive.heart.failure..unspecified
+          + Systolic..congestive..heart.failure
+          + Unspecified.systolic..congestive..heart.failure
+          + Acute.systolic..congestive..heart.failure
+          + Chronic.systolic..congestive..heart.failure
+          + Acute.on.chronic.systolic..congestive..heart.failure
+          )
+
+# Summary of Diastolic
+
+data <- data %>%
+  mutate(Diastolic = Diastolic..congestive..heart.failure
+         + Unspecified.diastolic..congestive..heart.failure
+         + Acute.diastolic..congestive..heart.failure
+         + Chronic.diastolic..congestive..heart.failure
+         + Acute.on.chronic.diastolic..congestive..heart.failure            
+          )
+
+# Summary of Combine Diastolic & Systolic
+
+data <- data %>%
+  mutate(Comb_DS = Combined.systolic..congestive..and.diastolic..congestive..heart
+         + Unspecified.combined.systolic..congestive..and.diastolic..conge
+         + Acute.combined.systolic..congestive..and.diastolic..congestive.
+         + Chronic.combined.systolic..congestive..and.diastolic..congestiv
+         + Acute.on.chronic.combined.systolic..congestive..and.diastolic..
+          )
+
+# Summary of Fibrillation
+
+data <- data %>%
+  mutate(Fibrillation = Atrial.fibrillation
+         +Atrial.fibrillation.and.flutter
+         +Paroxysmal.atrial.fibrillation
+         +Persistent.atrial.fibrillation
+         +Longstanding.persistent.atrial.fibrillation
+         +Other.persistent.atrial.fibrillation
+         +Chronic.atrial.fibrillation
+         +Chronic.atrial.fibrillation..unspecified
+         +Permanent.atrial.fibrillation
+         +Unspecified.atrial.fibrillation.and.atrial.flutter
+         +Unspecified.atrial.fibrillation
+         )
+
+# Summary of Pulmonary Disease
+
+data <- data %>%
+  mutate(PulmonaryDisease = Other.chronic.obstructive.pulmonary.disease
+         +Chronic.obstructive.pulmonary.disease.with..acute..lower.respir
+         +Chronic.obstructive.pulmonary.disease.with..acute..exacerbation
+         +Chronic.obstructive.pulmonary.disease..unspecified
+         +Other.chronic.obstructive.pulmonary.disease.2
+         +Chronic.obstructive.pulmonary.disease.with..acute..lower.respir.2
+         +Chronic.obstructive.pulmonary.disease.with..acute..exacerbation.2
+         +Chronic.obstructive.pulmonary.disease..unspecified.2             
+         )
+
+# Summary of Stroke
+
+data <- data %>%
+  mutate(Stroke = Heat.stroke.and.sunstroke
+         +Brain.stem.stroke.syndrome
+         +Cerebellar.stroke.syndrome
+         +National.Institutes.of.Health.Stroke.Scale..NIHSS..score
+         +Heatstroke.and.sunstroke
+         +Heatstroke.and.sunstroke.2
+         +Heatstroke.and.sunstroke..initial.encounter
+         +Heatstroke.and.sunstroke..subsequent.encounter
+         +Heatstroke.and.sunstroke..sequela
+         +Exertional.heatstroke
+         +Exertional.heatstroke..initial.encounter
+         +Exertional.heatstroke..subsequent.encounter
+         +Exertional.heatstroke..sequela
+         +Other.heatstroke.and.sunstroke
+         +Other.heatstroke.and.sunstroke..initial.encounter
+         +Other.heatstroke.and.sunstroke..subsequent.encounter
+         +Other.heatstroke.and.sunstroke..sequela
+         +Heatstroke.and.sunstroke..initial.encounter.2
+         +Heatstroke.and.sunstroke..subsequent.encounter.2
+         +Heatstroke.and.sunstroke..sequela.2
+         +Family.history.of.stroke..cerebrovascular.
+         +Family.history.of.stroke                                         
+         )
+
+# Summary of Hyperlipidemia
+
+data <- data %>%
+  mutate(Hyperlipidemia = Mixed.hyperlipidemia
+         +Other.and.unspecified.hyperlipidemia
+         +Mixed.hyperlipidemia.2
+         +Other.hyperlipidemia
+         +Other.hyperlipidemia.2
+         +Hyperlipidemia..unspecified                                      
+         )
+
+# Summary of Dementia
+
+data <- data %>%
+  mutate(Dementia = Senile.dementia..uncomplicated
+         +Presenile.dementia..uncomplicated
+         +Presenile.dementia.with.delirium
+         +Presenile.dementia.with.delusional.features
+         +Presenile.dementia.with.depressive.features
+         +Senile.dementia.with.delusional.features
+         +Senile.dementia.with.depressive.features
+         +Senile.dementia.with.delirium
+         +Vascular.dementia..uncomplicated
+         +Vascular.dementia..with.delirium
+         +Vascular.dementia..with.delusions
+         +Vascular.dementia..with.depressed.mood
+         +Alcohol.induced.persisting.dementia
+         +Drug.induced.persisting.dementia
+         +Dementia.in.conditions.classified.elsewhere.without.behavioral
+         +Dementia.in.conditions.classified.elsewhere.with.behavioral.dis
+         +Dementia..unspecified..without.behavioral.disturbance
+         +Dementia..unspecified..with.behavioral.disturbance
+         +Other.frontotemporal.dementia
+         +Dementia.with.lewy.bodies
+         +Vascular.dementia
+         +Vascular.dementia.2
+         +Vascular.dementia.without.behavioral.disturbance
+         +Vascular.dementia.with.behavioral.disturbance
+         +Dementia.in.other.diseases.classified.elsewhere
+         +Dementia.in.other.diseases.classified.elsewhere.2
+         +Dementia.in.other.diseases.classified.elsewhere.without.behavio
+         +Dementia.in.other.diseases.classified.elsewhere.with.behavioral
+         +Unspecified.dementia
+         +Unspecified.dementia.2
+         +Unspecified.dementia.without.behavioral.disturbance
+         +Unspecified.dementia.with.behavioral.disturbance
+         +Alcohol.dependence.with.alcohol.induced.persisting.dementia
+         +Alcohol.use..unspecified.with.alcohol.induced.persisting.dement
+         +Sedative..hypnotic.or.anxiolytic.dependence.with.sedative..hypn
+         +Sedative..hypnotic.or.anxiolytic.use..unspecified.with.sedative
+         +Inhalant.abuse.with.inhalant.induced.dementia
+         +Inhalant.dependence.with.inhalant.induced.dementia
+         +Inhalant.use..unspecified.with.inhalant.induced.persisting.deme
+         +Other.psychoactive.substance.abuse.with.psychoactive.substance.
+         +Other.psychoactive.substance.dependence.with.psychoactive.subst
+         +Other.psychoactive.substance.use..unspecified.with.psychoactive
+         +Frontotemporal.dementia
+         +Other.frontotemporal.dementia.2
+         +Dementia.with.Lewy.bodies                                        
+         )
+
+
+# Print the dataframe to see the result
+names(data)
+```
+
+### Now we are going to remove for data ser variables that were sumarized.
+
+```{r Remove Binara varaibles to leave just combined, echo=FALSE}
+
+data <- subset(data, select = -c(Acute.myocardial.infarction.of.anterolateral.wall..episode.of.c,
+                          Acute.myocardial.infarction.of.anterolateral.wall..initial.epis,
+                          Acute.myocardial.infarction.of.anterolateral.wall..subsequent.e,
+                          Acute.myocardial.infarction.of.other.anterior.wall..episode.of.,
+                          Acute.myocardial.infarction.of.other.anterior.wall..initial.epi,
+                          Acute.myocardial.infarction.of.other.anterior.wall..subsequent.,
+                          Acute.myocardial.infarction.of.inferolateral.wall..episode.of.c,
+                          Acute.myocardial.infarction.of.inferolateral.wall..initial.epis,
+                          Acute.myocardial.infarction.of.inferolateral.wall..subsequent.e,
+                          Acute.myocardial.infarction.of.inferoposterior.wall..episode.of,
+                          Acute.myocardial.infarction.of.inferoposterior.wall..initial.ep,
+                          Acute.myocardial.infarction.of.inferoposterior.wall..subsequent,
+                          Acute.myocardial.infarction.of.other.inferior.wall..episode.of.,
+                          Acute.myocardial.infarction.of.other.inferior.wall..initial.epi,
+                          Acute.myocardial.infarction.of.other.inferior.wall..subsequent.,
+                          Acute.myocardial.infarction.of.other.lateral.wall..episode.of.c,
+                          Acute.myocardial.infarction.of.other.lateral.wall..initial.epis,
+                          Acute.myocardial.infarction.of.other.lateral.wall..subsequent.e,
+                          Acute.myocardial.infarction.of.other.specified.sites..episode.o,
+                          Acute.myocardial.infarction.of.other.specified.sites..initial.e,
+                          Acute.myocardial.infarction.of.other.specified.sites..subsequen,
+                          Acute.myocardial.infarction.of.unspecified.site..episode.of.car,
+                          Acute.myocardial.infarction.of.unspecified.site..initial.episod,
+                          Acute.myocardial.infarction.of.unspecified.site..subsequent.epi,
+                          Postmyocardial.infarction.syndrome,
+                          Acute.coronary.occlusion.without.myocardial.infarction,
+                          Old.myocardial.infarction,
+                          Certain.sequelae.of.myocardial.infarction..not.elsewhere.classi,
+                          Acute.myocardial.infarction,
+                          ST.elevation..STEMI..myocardial.infarction.of.anterior.wall,
+                          ST.elevation..STEMI..myocardial.infarction.involving.left.main,
+                          ST.elevation..STEMI..myocardial.infarction.involving.left.anter,
+                          ST.elevation..STEMI..myocardial.infarction.involving.other.coro,
+                          ST.elevation..STEMI..myocardial.infarction.of.inferior.wall,
+                          ST.elevation..STEMI..myocardial.infarction.involving.right.coro,
+                          ST.elevation..STEMI..myocardial.infarction.involving.other.coro.2,
+                          ST.elevation..STEMI..myocardial.infarction.of.other.sites,
+                          ST.elevation..STEMI..myocardial.infarction.involving.left.circu,
+                          ST.elevation..STEMI..myocardial.infarction.involving.other.site,
+                          ST.elevation..STEMI..myocardial.infarction.of.unspecified.site,
+                          Non.ST.elevation..NSTEMI..myocardial.infarction,
+                          Acute.myocardial.infarction..unspecified,
+                          Other.type.of.myocardial.infarction,
+                          Myocardial.infarction.type.2,
+                          Other.myocardial.infarction.type,
+                          Subsequent.ST.elevation..STEMI..and.non.ST.elevation..NSTEMI..m,
+                          Subsequent.ST.elevation..STEMI..myocardial.infarction.of.anteri,
+                          Subsequent.ST.elevation..STEMI..myocardial.infarction.of.inferi,
+                          Subsequent.non.ST.elevation..NSTEMI..myocardial.infarction,
+                          Subsequent.ST.elevation..STEMI..myocardial.infarction.of.other,
+                          Subsequent.ST.elevation..STEMI..myocardial.infarction.of.unspec,
+                          Certain.current.complications.following.ST.elevation..STEMI..an,
+                          Hemopericardium.as.current.complication.following.acute.myocard,
+                          Atrial.septal.defect.as.current.complication.following.acute.my,
+                          Ventricular.septal.defect.as.current.complication.following.acu,
+                          Rupture.of.cardiac.wall.without.hemopericardium.as.current.comp,
+                          Rupture.of.chordae.tendineae.as.current.complication.following,
+                          Rupture.of.papillary.muscle.as.current.complication.following.a,
+                          Thrombosis.of.atrium..auricular.appendage..and.ventricle.as.cur,
+                          Other.current.complications.following.acute.myocardial.infarcti,
+                          Acute.coronary.thrombosis.not.resulting.in.myocardial.infarctio,
+                          Old.myocardial.infarction.2,
+                          Rheumatic.heart.failure..congestive.,
+                          Congestive.heart.failure..unspecified,
+                          Systolic..congestive..heart.failure,
+                          Unspecified.systolic..congestive..heart.failure,
+                          Acute.systolic..congestive..heart.failure,
+                          Chronic.systolic..congestive..heart.failure,
+                          Acute.on.chronic.systolic..congestive..heart.failure,
+                          Diastolic..congestive..heart.failure,
+                          Unspecified.diastolic..congestive..heart.failure,
+                          Acute.diastolic..congestive..heart.failure,
+                          Chronic.diastolic..congestive..heart.failure,
+                          Acute.on.chronic.diastolic..congestive..heart.failure,
+                          Combined.systolic..congestive..and.diastolic..congestive..heart,
+                          Unspecified.combined.systolic..congestive..and.diastolic..conge,
+                          Acute.combined.systolic..congestive..and.diastolic..congestive.,
+                          Chronic.combined.systolic..congestive..and.diastolic..congestiv,
+                          Acute.on.chronic.combined.systolic..congestive..and.diastolic..,
+                          Atrial.fibrillation,
+                          Atrial.fibrillation.and.flutter,
+                          Paroxysmal.atrial.fibrillation,
+                          Persistent.atrial.fibrillation,
+                          Longstanding.persistent.atrial.fibrillation,
+                          Other.persistent.atrial.fibrillation,
+                          Chronic.atrial.fibrillation,
+                          Chronic.atrial.fibrillation..unspecified,
+                          Permanent.atrial.fibrillation,
+                          Unspecified.atrial.fibrillation.and.atrial.flutter,
+                          Unspecified.atrial.fibrillation,
+                          Other.chronic.obstructive.pulmonary.disease,
+                          Chronic.obstructive.pulmonary.disease.with..acute..lower.respir,
+                          Chronic.obstructive.pulmonary.disease.with..acute..exacerbation,
+                          Chronic.obstructive.pulmonary.disease..unspecified,
+                          Heat.stroke.and.sunstroke,
+                          Brain.stem.stroke.syndrome,
+                          Cerebellar.stroke.syndrome,
+                          National.Institutes.of.Health.Stroke.Scale..NIHSS..score,
+                          Heatstroke.and.sunstroke,
+                          Heatstroke.and.sunstroke.2,
+                          Heatstroke.and.sunstroke..initial.encounter,
+                          Heatstroke.and.sunstroke..subsequent.encounter,
+                          Heatstroke.and.sunstroke..sequela,
+                          Exertional.heatstroke,
+                          Exertional.heatstroke..initial.encounter,
+                          Exertional.heatstroke..subsequent.encounter,
+                          Exertional.heatstroke..sequela,
+                          Other.heatstroke.and.sunstroke,
+                          Other.heatstroke.and.sunstroke..initial.encounter,
+                          Other.heatstroke.and.sunstroke..subsequent.encounter,
+                          Other.heatstroke.and.sunstroke..sequela,
+                          Heatstroke.and.sunstroke..initial.encounter.2,
+                          Heatstroke.and.sunstroke..subsequent.encounter.2,
+                          Heatstroke.and.sunstroke..sequela.2,
+                          Family.history.of.stroke..cerebrovascular.,
+                          Family.history.of.stroke,
+                          Mixed.hyperlipidemia,
+                          Other.and.unspecified.hyperlipidemia,
+                          Mixed.hyperlipidemia.2,
+                          Other.hyperlipidemia,
+                          Other.hyperlipidemia.2,
+                          Hyperlipidemia..unspecified,
+                          Other.chronic.obstructive.pulmonary.disease.2,
+                          Chronic.obstructive.pulmonary.disease.with..acute..lower.respir.2,
+                          Chronic.obstructive.pulmonary.disease.with..acute..exacerbation.2,
+                          Chronic.obstructive.pulmonary.disease..unspecified.2,
+                          Senile.dementia..uncomplicated,
+                          Presenile.dementia..uncomplicated,
+                          Presenile.dementia.with.delirium,
+                          Presenile.dementia.with.delusional.features,
+                          Presenile.dementia.with.depressive.features,
+                          Senile.dementia.with.delusional.features,
+                          Senile.dementia.with.depressive.features,
+                          Senile.dementia.with.delirium,
+                          Vascular.dementia..uncomplicated,
+                          Vascular.dementia..with.delirium,
+                          Vascular.dementia..with.delusions,
+                          Vascular.dementia..with.depressed.mood,
+                          Alcohol.induced.persisting.dementia,
+                          Drug.induced.persisting.dementia,
+                          Dementia.in.conditions.classified.elsewhere.without.behavioral,
+                          Dementia.in.conditions.classified.elsewhere.with.behavioral.dis,
+                          Dementia..unspecified..without.behavioral.disturbance,
+                          Dementia..unspecified..with.behavioral.disturbance,
+                          Other.frontotemporal.dementia,
+                          Dementia.with.lewy.bodies,
+                          Vascular.dementia,
+                          Vascular.dementia.2,
+                          Vascular.dementia.without.behavioral.disturbance,
+                          Vascular.dementia.with.behavioral.disturbance,
+                          Dementia.in.other.diseases.classified.elsewhere,
+                          Dementia.in.other.diseases.classified.elsewhere.2,
+                          Dementia.in.other.diseases.classified.elsewhere.without.behavio,
+                          Dementia.in.other.diseases.classified.elsewhere.with.behavioral,
+                          Unspecified.dementia,
+                          Unspecified.dementia.2,
+                          Unspecified.dementia.without.behavioral.disturbance,
+                          Unspecified.dementia.with.behavioral.disturbance,
+                          Alcohol.dependence.with.alcohol.induced.persisting.dementia,
+                          Alcohol.use..unspecified.with.alcohol.induced.persisting.dement,
+                          Sedative..hypnotic.or.anxiolytic.dependence.with.sedative..hypn,
+                          Sedative..hypnotic.or.anxiolytic.use..unspecified.with.sedative,
+                          Inhalant.abuse.with.inhalant.induced.dementia,
+                          Inhalant.dependence.with.inhalant.induced.dementia,
+                          Inhalant.use..unspecified.with.inhalant.induced.persisting.deme,
+                          Other.psychoactive.substance.abuse.with.psychoactive.substance.,
+                          Other.psychoactive.substance.dependence.with.psychoactive.subst,
+                          Other.psychoactive.substance.use..unspecified.with.psychoactive,
+                          Frontotemporal.dementia,
+                          Other.frontotemporal.dementia.2,
+                          Dementia.with.Lewy.bodies) )
+
+dim(data)
+names(data)
+
+
+
+```
+
+```{r Deliver dara set for imputation, echo=FALSE}
+mimic_iv_BinaryCombination <- data
+mimic_iv_Imputation <- mimic_iv_BinaryCombination
+
+```
+
+## Combining Columns
+
+### Arterial.Blood.Pressure.systolic and Non.Invasive.Blood.Pressure.systolic
+
+1. Arterial Blood Pressure (ABP) Systolic: obtained using an more invasive and potentially more accurate.
+2. Non-Invasive Blood Pressure (NIBP) Systolic: obtained using a non-invasive method and more convenient but may be less accurate compared to ABP.
+
+```{r echo=FALSE}
+# Check correlation between the two variables
+correlation <- cor(mimic_iv_Imputation$Arterial.Blood.Pressure.systolic, mimic_iv_Imputation$Non.Invasive.Blood.Pressure.systolic, use = "complete.obs")
+```
+
+With a correlation of approximately 0.08325, the Arterial.Blood.Pressure.systolic and Non.Invasive.Blood.Pressure.systolic variables have a very weak positive correlation. Which means they are not strongly related, and consolidating them might not provide much benefit in terms of improving the data quality. 
+But these variables are to measure systolic blood pressure using different methods, so we are gonna create a new variable, averaging the two variables.
+
+```{r echo=FALSE}
+# Calculate the average of the two blood pressure variables
+mimic_iv_Imputation$AvgBloodPressureSystolic <- rowMeans(mimic_iv_Imputation[, c("Arterial.Blood.Pressure.systolic", "Non.Invasive.Blood.Pressure.systolic")], na.rm = TRUE)
+
+# Check if there are any remaining missing values
+any(is.na(mimic_iv_Imputation$AvgBloodPressureSystolic))
+
+```
+This code calculates the row-wise mean of the two blood pressure variables and creates a new variable AvgBloodPressureSystolic in the dataset.
+
+### Arterial.Blood.Pressure.diastolic and Non.Invasive.Blood.Pressure.diastolic
+
+1. Arterial Blood Pressure (ABP) Diastolic: more invasive but potentially more accurate
+2. Non-Invasive Blood Pressure (NIBP) Diastolic: less invasive but may be less accurate in certain situations.
+
+```{r echo=FALSE}
+# Check correlation between the two variables
+correlation <- cor(mimic_iv_Imputation$Arterial.Blood.Pressure.diastolic, mimic_iv_Imputation$Non.Invasive.Blood.Pressure.diastolic, use = "complete.obs")
+```
+                               
+With a correlation of approximately -0.0009740, the Arterial.Blood.Pressure.diastolic and Non.Invasive.Blood.Pressure.diastolic variables have a very weak negative correlation. This suggests that the two variables are not correlated or are very weakly related. In this case, similar to the systolic blood pressure variables, consolidating these variables might not provide much benefit in terms of improving data quality or reducing redundancy.
+But these variables are to measure diastolic blood pressure using different methods, so we are gonna create a new variable, averaging the two variables.
+
+```{r echo=FALSE}
+# Calculate the average of the two blood pressure variables
+mimic_iv_Imputation$AvgBloodPressureDiastolic <- rowMeans(mimic_iv_Imputation[, c("Arterial.Blood.Pressure.diastolic", "Non.Invasive.Blood.Pressure.diastolic")], na.rm = TRUE)
+
+# Check if there are any remaining missing values
+any(is.na(mimic_iv_Imputation$AvgBloodPressureDiastolic))
+
+```
+This code calculates the row-wise mean of the two blood pressure variables and creates a new variable AvgBloodPressureDiastolic in the dataset.
+
+### Combining Respiratory Rate variables
+
+1. Respiratory.Rate : general measurement of breathes per minute
+2. Respiratory.Rate..Set : fixed or set respiratory rate. During mechanical ventilation
+3. Respiratory.Rate..spontaneous : natural respiratory rate. Without any external intervention to control the breath
+4. Respiratory.Rate..Total : cumulative respiratory rate over a period
+
+```{r echo=FALSE}
+correlation_matrix <- cor(mimic_iv_Imputation[, c("Respiratory.Rate..Set.", "Respiratory.Rate..spontaneous.", "Respiratory.Rate..Total.", "Respiratory.Rate")], use = "complete.obs")
+knitr::kable(correlation_matrix, caption = "Correlation matrix of Respiratory rate")
+```
+
+Even though they are not strongly correlated, we can still consolidate them into a one variable, because all of these variables are different ways of measuring or recording same respiratory rate.
+
+```{r echo=FALSE}
+# Create a new variable for consolidated respiratory rate
+mimic_iv_Imputation$ConsolidatedRespiratoryRate <- rowMeans(mimic_iv_Imputation[, c("Respiratory.Rate..Set.", "Respiratory.Rate..spontaneous.", "Respiratory.Rate..Total.", "Respiratory.Rate")], na.rm = TRUE)
+
+# Check if there are any remaining missing values
+any(is.na(mimic_iv_Imputation$ConsolidatedRespiratoryRate))
+
+```
+This code calculates the row-wise mean of the four respiratory rate variables, creating a new variable ConsolidatedRespiratoryRate.
+
+### Consolidate and average following duplicated/repeated variables
+
+1. Potassium..Whole.Blood.2   +   Potassium..whole.blood.                                         
+2. Sodium..whole.blood.   +   Sodium..Whole.Blood                                              
+3. Chloride..Whole.Blood    +   Chloride..whole.blood.                                           
+4. Hemoglobin   +   Hemoglobin.2                                                     
+
+```{r echo=FALSE}
+# Create new variables for consolidated and averaged values
+mimic_iv_Imputation$AvgPotassium <- rowMeans(mimic_iv_Imputation[, c("Potassium..Whole.Blood.2", "Potassium..whole.blood.")], na.rm = TRUE)
+mimic_iv_Imputation$AvgSodium <- rowMeans(mimic_iv_Imputation[, c("Sodium..whole.blood.", "Sodium..Whole.Blood")], na.rm = TRUE)
+mimic_iv_Imputation$AvgChloride <- rowMeans(mimic_iv_Imputation[, c("Chloride..Whole.Blood", "Chloride..whole.blood.")], na.rm = TRUE)
+mimic_iv_Imputation$AvgHemoglobin <- rowMeans(mimic_iv_Imputation[, c("Hemoglobin", "Hemoglobin.2")], na.rm = TRUE)
+
+# Check if there are any remaining missing values
+any(is.na(mimic_iv_Imputation$AvgPotassium)) || any(is.na(mimic_iv_Imputation$AvgSodium)) || any(is.na(mimic_iv_Imputation$AvgChloride)) || any(is.na(mimic_iv_Imputation$AvgHemoglobin))
+```
+
+#### Remove the columns
+
+```{r echo=FALSE}
+columns_to_remove <- c("Arterial.Blood.Pressure.systolic", "Non.Invasive.Blood.Pressure.systolic", "Arterial.Blood.Pressure.diastolic", "Non.Invasive.Blood.Pressure.diastolic", "Respiratory.Rate..Set.", "Respiratory.Rate..spontaneous.", "Respiratory.Rate..Total.", "Respiratory.Rate", "Potassium..Whole.Blood.2", "Potassium..whole.blood.", "Sodium..whole.blood.", "Sodium..Whole.Blood", "Chloride..Whole.Blood", "Chloride..whole.blood.", "Hemoglobin", "Hemoglobin.2")
+
+# Create a new data set without the columns to remove
+mimic_iv_clean <- mimic_iv_Imputation[, !(names(mimic_iv_Imputation) %in% columns_to_remove)]
+```
+
+#### Calculate again the missing value percentages
+
+```{r echo=FALSE}
+# Calculate missing value count and percentage for each column
+missing_values <- colSums(is.na(mimic_iv_clean))
+missing_percentage <- (missing_values / nrow(mimic_iv_clean)) * 100
+
+# Create a data frame to store the results
+missing_data <- data.frame(missing_count = missing_values, missing_percentage = missing_percentage)
+
+# Filter to include only columns with missing data
+missing_data_filtered <- missing_data[missing_data$missing_count > 0, ]
+
+# Sort the data frame by missing_percentage in descending order
+missing_data_sorted <- missing_data_filtered[order(-missing_data_filtered$missing_percentage), ]
+
+# Print the results in a table format
+knitr::kable(missing_data_sorted, caption = "Missing Value Summary After Combining Features")
+```
+
+After combining some variables we can see these differences in the missing value percentages:
+
+### Calculating Missingness
+
+```{r echo=FALSE}
+library(kableExtra)
+
+# Create a data frame with the before and after values
+table_before <- data.frame(
+  Before_Missing_Count = c(2478, 45, 2477, 45, 2470, 2300, 2286, 2, 3569, 2267, 3362, 2121, 2802, 1441, 2357, 0),
+  row.names = c("Arterial.Blood.Pressure.systolic", "Non.Invasive.Blood.Pressure.systolic",
+                "Arterial.Blood.Pressure.diastolic", "Non.Invasive.Blood.Pressure.diastolic",
+                "Respiratory.Rate..Set.", "Respiratory.Rate..spontaneous.", "Respiratory.Rate..Total.",
+                "Respiratory.Rate", "Chloride..whole.blood.", "Chloride..Whole.Blood",                                 "Sodium..whole.blood","Sodium..Whole.Blood", "Potassium..whole.blood.",                                "Potassium..Whole.Blood.2","Hemoglobin", "Hemoglobin.2")
+)
+
+table_after <- data.frame(
+  After_Missing_Count = c(2, 2, 0, 2265, 2119, 1441, 0),
+  row.names = c("AvgBloodPressureSystolic", "AvgBloodPressureDiastolic", "ConsolidatedRespiratoryRate",                 "AvgChloride", "AvgSodium", "AvgPotassium", "AvgHemoglobin")
+)
+
+# Print the table using kable
+knitr::kable(table_before, caption = "Before combining variables")
+knitr::kable(table_after, caption = "After combining variables")
+
+```
+
+For handling missing values in the mimic_iv_clean data set for variables related to lab tests and vital signs, we are doing the statistical test before imputation:
+
+#### Missingness by group
+Impute missing values based on the similar cases. For that we are gonna calculate the missing values for each variable by age, gender and ethnicity. And going to use only the variables with highest percentage of missing values.
+
+Why did we consider Age, Gender, Ethnicity:
+
+1. Age: Age can be an important factor in healthcare data analysis as different age groups may have different patterns of missingness. For example, certain medical tests or measurements may be more common or relevant in specific age groups, leading to different rates of missing data.
+
+2. Gender: Gender can also play a role in healthcare and medical data. Some conditions or tests may be more prevalent or important for one gender than the other, leading to differences in missing data patterns.
+
+3. Ethnicity: Ethnicity can be associated with various health factors and medical conditions, which could influence the presence or absence of certain variables in the data set.
+
+```{r echo=FALSE}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# List of variables to analyze
+variables <- c("Temperature", "Glucose..whole.blood.", "AvgChloride", "AvgSodium", "AvgPotassium")
+
+```
+
+#### Missingness by Age.Group
+
+```{r echo=FALSE}
+# Loop through each variable
+for (variable in variables) {
+  # Calculate the proportion of missing values by Age.Group
+  missing_summary_variable <- mimic_iv_clean %>%
+    group_by(Age.Group) %>%
+    summarise(prop_missing = mean(is.na(!!sym(variable))))
+
+  # Summarize the proportions
+  summary_table_variable <- missing_summary_variable %>%
+    group_by(Age.Group) %>%
+    summarise(min_missing = min(prop_missing),
+              max_missing = max(prop_missing),
+              mean_missing = mean(prop_missing))
+
+  # Print the summary table
+  cat("\nSummary table for", variable, "\n")
+  print(summary_table_variable)
+
+  # Perform chi-square test
+  chi_sq_variable <- table(is.na(mimic_iv_clean[[variable]]), mimic_iv_clean$Age.Group)
+  chi_sq_result <- chisq.test(chi_sq_variable)
+  print(paste("Chi-square test result for", variable))
+  print(chi_sq_result)
+  
+  # Visualization
+  plot <- ggplot(missing_summary_variable, aes(x = Age.Group, y = prop_missing, fill = Age.Group)) +
+    geom_bar(stat = "identity") +
+    labs(title = paste("Proportion of missing values by Age.Group for", variable),
+         x = "Age.Group",
+         y = "Proportion missing") +
+    theme_minimal()
+  print(plot)
+}
+```
+
+#### Missingness by Gender
+
+```{r echo=FALSE}
+# Loop through each variable
+for (variable in variables) {
+  # Calculate the proportion of missing values by gender
+  missing_summary_variable <- mimic_iv_clean %>%
+    group_by(gender) %>%
+    summarise(prop_missing = mean(is.na(!!sym(variable))))
+
+  # Summarize the proportions
+  summary_table_variable <- missing_summary_variable %>%
+    group_by(gender) %>%
+    summarise(min_missing = min(prop_missing),
+              max_missing = max(prop_missing),
+              mean_missing = mean(prop_missing))
+
+  # Print the summary table
+  cat("\nSummary table for", variable, "\n")
+  print(summary_table_variable)
+
+  # Perform chi-square test
+  chi_sq_variable <- table(is.na(mimic_iv_clean[[variable]]), mimic_iv_clean$gender)
+  chi_sq_result <- chisq.test(chi_sq_variable)
+  print(paste("Chi-square test result for", variable))
+  print(chi_sq_result)
+  
+  # Visualization
+  plot <- ggplot(missing_summary_variable, aes(x = gender, y = prop_missing, fill = gender)) +
+    geom_bar(stat = "identity") +
+    labs(title = paste("Proportion of missing values by gender for", variable),
+         x = "Gender",
+         y = "Proportion missing") +
+    theme_minimal()
+  print(plot)
+}
+```
+
+#### Missingness by Ethnicity
+
+```{r echo=FALSE}
+# Loop through each variable
+for (variable in variables) {
+  # Calculate the proportion of missing values by ethnicity
+  missing_summary_variable <- mimic_iv_clean %>%
+    group_by(ethnicity) %>%
+    summarise(prop_missing = mean(is.na(!!sym(variable))))
+
+  # Summarize the proportions
+  summary_table_variable <- missing_summary_variable %>%
+    group_by(ethnicity) %>%
+    summarise(min_missing = min(prop_missing),
+              max_missing = max(prop_missing),
+              mean_missing = mean(prop_missing))
+  
+  # Print the summary table
+  cat("\nSummary table for", variable, "\n")
+  print(summary_table_variable)
+
+  # Perform chi-square test
+  chi_sq_variable <- table(is.na(mimic_iv_clean[[variable]]), mimic_iv_clean$ethnicity)
+  chi_sq_result <- chisq.test(chi_sq_variable)
+  print(paste("Chi-square test result for", variable))
+  print(chi_sq_result)
+  
+  # Visualization
+  plot <- ggplot(missing_summary_variable, aes(x = ethnicity, y = prop_missing, fill = ethnicity)) +
+    geom_bar(stat = "identity") +
+    labs(title = paste("Proportion of missing values by ethnicity for", variable),
+         x = "Ethnicity",
+         y = "Proportion missing") +
+    theme_minimal() +
+    theme(axis.text.x = element_blank(),
+          legend.position = "bottom",
+          legend.key.width = unit(0.4, "cm"),
+          legend.key.height = unit(0.4, "cm"),
+          legend.text = element_text(size = unit(4, "cm"))) 
+    
+  print(plot)
+}
+```
+
+#### Missingness by Mortality
+
+```{r echo=FALSE}
+# Loop through each variable
+for (variable in variables) {
+  # Calculate the proportion of missing values by mortality
+  missing_summary_variable <- mimic_iv_clean %>%
+    group_by(mortality) %>%
+    summarise(prop_missing = mean(is.na(!!sym(variable))))
+
+  # Summarize the proportions
+  summary_table_variable <- missing_summary_variable %>%
+    group_by(mortality) %>%
+    summarise(min_missing = min(prop_missing),
+              max_missing = max(prop_missing),
+              mean_missing = mean(prop_missing))
+
+  # Print the summary table
+  cat("\nSummary table for", variable, "\n")
+  print(summary_table_variable)
+
+  # Perform chi-square test
+  chi_sq_variable <- table(is.na(mimic_iv_clean[[variable]]), mimic_iv_clean$mortality)
+  chi_sq_result <- chisq.test(chi_sq_variable)
+  print(paste("Chi-square test result for", variable))
+  print(chi_sq_result)
+  
+  # Visualization
+  plot <- ggplot(missing_summary_variable, aes(x = mortality, y = prop_missing, fill = mortality)) +
+    geom_bar(stat = "identity") +
+    labs(title = paste("Proportion of missing values by mortality for", variable),
+         x = "Mortality",
+         y = "Proportion missing") +
+    theme_minimal() 
+  print(plot)
+}
+```
+
+Based on the summary tables, we can conclude that there is no strong association between the demographic factors Age.Group, Gender, Ethnicity, Mortality and the missingness of the variables. However, there are some ethnicity types that show a strong association with missingness:
+
+* For the ethnicity group HISPANIC/LATINO - CENTRAL AMERICAN, all values are missing.
+* For the ethnicity group HISPANIC/LATINO - MEXICAN, Temperature is missing, and half of the other variables are missing.
+* The mortality and missingness of Temperature variable show a strong association.
+
+#### Imputing missing values of vital signs
+
+```{r echo=FALSE}
+# List of variables to impute
+variables_to_impute <- c("SpO2.Desat.Limit", "Heart.Rate.Alarm...Low", 
+                          "Heart.rate.Alarm...High", "AvgBloodPressureSystolic", 
+                          "AvgBloodPressureDiastolic")
+
+# Impute missing values for each variable
+for (variable in variables_to_impute) {
+  median_val <- median(mimic_iv_clean[[variable]], na.rm = TRUE)
+  mimic_iv_clean[[variable]][is.na(mimic_iv_clean[[variable]])] <- median_val
+}
+```
+
+Due to a high number of missing values and its lack of significance in the reference document, the Temperature variable has been removed from the data set.
+
+```{r echo=FALSE}
+mimic_iv_clean <- mimic_iv_clean %>%
+  select(-Temperature)
+```
+
+#### Imputing missing values of lab tests
+
+Even though 'Glucose..whole.blood.' shows a moderate significance between death and being alive, the reference document considers it as the most important factor. Therefore, we are going to keep this feature but remove the observations that are missing 'Glucose..whole.blood.'.
+
+```{r echo=FALSE}
+# Remove observations with missing values in 'Glucose..whole.blood.'
+mimic_iv_clean <- mimic_iv_clean[complete.cases(mimic_iv_clean$`Glucose..whole.blood.`), ]
+```
+
+Since the anion gap is calculated using the concentrations of sodium (Na), chloride (Cl), and bicarbonate (HCO3) in mmol/L, we will retain only the anion gap feature and drop the sodium and chloride features. Bicarbonate is considered important in the reference document, so we will keep it after imputing missing values. 
+Additionally, other lab tests with a low percentage of missing values—INR, Prothrombin.time, Anion.gap, and Creatinine..serum will have missing values imputed with the median. 
+However, Potassium, which has a high percentage of missing values and is not considered an important feature, will be dropped.
+
+```{r echo=FALSE}
+mimic_iv_clean <- subset(mimic_iv_clean, select = -c(AvgSodium, AvgChloride, AvgPotassium))
+
+# List of variables to impute
+variables_to_impute <- c("INR", "Prothrombin.time", "Anion.gap", "Creatinine..serum.", "Bicarbonate")
+
+# Impute missing values for each variable
+for (variable in variables_to_impute) {
+  median_val <- median(mimic_iv_clean[[variable]], na.rm = TRUE)
+  mimic_iv_clean[[variable]][is.na(mimic_iv_clean[[variable]])] <- median_val
+}
+```
+
+Check for missing values
+
+```{r echo=FALSE}
+# Calculate missing value count and percentage for each column
+missing_values2 <- colSums(is.na(mimic_iv_clean))
+
+# Print the results in a table format
+knitr::kable(missing_values2, caption = "Missing Value Summary")
+```
+
+
+```{r echo=FALSE}
+mimic_iv_Final <- na.omit(mimic_iv_clean)
+write.csv(mimic_iv_Final, "mimic_iv_Final.csv", row.names = FALSE)
+
+```
+
+Check for missing values
+
+```{r echo=FALSE}
+# Calculate missing value count and percentage for each column
+missing_values3 <- colSums(is.na(mimic_iv_Final))
+
+# Print the results in a table format
+knitr::kable(missing_values3, caption = "Missing Value Summary")
+```
